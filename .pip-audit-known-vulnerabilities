@@ -1,0 +1,14 @@
+# Known vulnerabilities that cannot be fixed (no patched version available)
+# Used by: pip-audit --ignore-vuln <file>
+# Review periodically — remove entries when fixes become available
+
+# diskcache 5.6.3 - no fix available as of 2026-07-15
+PYSEC-2026-2447
+
+# lupa 2.6 - no fix available as of 2026-07-15
+PYSEC-2026-2613
+
+# fastmcp 2.14.5 - fix requires major version 3.x (breaking API change)
+# Tracked separately — will address when upstream migrates to fastmcp 3.x
+PYSEC-2026-2475
+PYSEC-2026-2476
