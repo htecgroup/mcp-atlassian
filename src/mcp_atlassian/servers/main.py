@@ -14,7 +14,7 @@ from fastmcp import FastMCP
 from fastmcp import settings as fastmcp_settings
 from fastmcp.exceptions import NotFoundError
 from fastmcp.server.event_store import EventStore
-from fastmcp.server.http import StarletteWithLifespan
+from fastmcp.server.http import HostOriginProtection, StarletteWithLifespan
 from fastmcp.tools import Tool as FastMCPTool
 from mcp.types import Tool as MCPTool
 from starlette.middleware import Middleware
@@ -322,7 +322,9 @@ class AtlassianMCP(ErrorPreservingFastMCP[MainAppContext]):
             )
             return []
 
-        all_tools: dict[str, FastMCPTool] = await self.get_tools()
+        all_tools: dict[str, FastMCPTool] = {
+            tool.name: tool for tool in await self.list_tools()
+        }
         logger.debug(
             f"Aggregated {len(all_tools)} tools before filtering: {list(all_tools.keys())}"
         )
@@ -348,8 +350,7 @@ class AtlassianMCP(ErrorPreservingFastMCP[MainAppContext]):
         # Denials look identical to an unknown tool (no exists-but-disabled leak).
         ctx = self._tool_filter_context()
         if ctx is not None:
-            all_tools = await self.get_tools()
-            tool_obj = all_tools.get(key)
+            tool_obj = await self.get_tool(key)
             if tool_obj is not None and not self._is_tool_authorized(
                 key, tool_obj, ctx
             ):
@@ -365,6 +366,9 @@ class AtlassianMCP(ErrorPreservingFastMCP[MainAppContext]):
         transport: Literal["http", "streamable-http", "sse"] = "streamable-http",
         event_store: EventStore | None = None,
         retry_interval: int | None = None,
+        host_origin_protection: HostOriginProtection | None = None,
+        allowed_hosts: list[str] | None = None,
+        allowed_origins: list[str] | None = None,
     ) -> StarletteWithLifespan:
         final_path = path
         if transport == "streamable-http":
@@ -384,6 +388,9 @@ class AtlassianMCP(ErrorPreservingFastMCP[MainAppContext]):
             transport=transport,
             event_store=event_store,
             retry_interval=retry_interval,
+            host_origin_protection=host_origin_protection,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
         )
         return app
 
