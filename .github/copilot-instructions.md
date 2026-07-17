@@ -40,8 +40,8 @@ uv run mcp-atlassian -v              # Verbose logging mode
 
 ### Mixin-Based Composition
 Functionality is organized into **focused mixins** that compose together:
-- **Jira**: `JiraFetcher` inherits from 13 feature mixins (ProjectsMixin, IssuesMixin, WorklogMixin, etc.)
-- **Confluence**: `ConfluenceFetcher` inherits from 7 feature mixins (SearchMixin, PagesMixin, SpacesMixin, etc.)
+- **Jira**: `JiraFetcher` inherits from 23 feature mixins (ProjectsMixin, IssuesMixin, WorklogMixin, etc.)
+- **Confluence**: `ConfluenceFetcher` inherits from 11 feature mixins (SearchMixin, PagesMixin, SpacesMixin, etc.)
 
 Each mixin lives in its own module under `src/mcp_atlassian/jira/` or `src/mcp_atlassian/confluence/`.
 
@@ -122,7 +122,9 @@ The codebase supports multiple authentication methods:
 - **Personal Access Tokens (PAT)**: Server/Data Center deployments
 - **OAuth 2.0**: Interactive user authentication with consent flow
 
-Auth configuration lives in `src/mcp_atlassian/utils/auth.py`.
+Per-service config/auth parsing lives in `JiraConfig.from_env()` / `ConfluenceConfig.from_env()`
+(`src/mcp_atlassian/jira/config.py`, `src/mcp_atlassian/confluence/config.py`); shared OAuth flow
+in `src/mcp_atlassian/utils/oauth.py`, SSL/mTLS setup in `src/mcp_atlassian/utils/ssl.py`.
 
 ## Pre-commit Hooks
 Pre-commit runs:
