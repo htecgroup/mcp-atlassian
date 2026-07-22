@@ -5,7 +5,13 @@ from pathlib import Path
 
 
 def test_fastmcp_minimum_version_includes_event_store() -> None:
-    """Ensure allowed FastMCP versions include fastmcp.server.event_store."""
+    """Ensure allowed FastMCP versions include fastmcp.server.event_store.
+
+    Floor is 3.4 (not just >= (2, 14)): fastmcp 3.0 removed `get_tools()` and
+    reshaped tool registration/Context/OAuth proxy internals this server relies
+    on, so anything below the 3.x rewrite isn't actually compatible even though
+    `event_store` itself has existed since 2.14.
+    """
     pyproject = Path("pyproject.toml").read_text()
 
     requirement = re.search(r'"fastmcp(?P<specifiers>[^\"]+)"', pyproject)
@@ -20,7 +26,7 @@ def test_fastmcp_minimum_version_includes_event_store() -> None:
     minimum_version = tuple(
         int(part) for part in lower_bound.group("version").split(".")
     )
-    assert minimum_version >= (2, 14)
+    assert minimum_version >= (3, 4)
 
 
 def test_starlette_minimum_version_includes_host_header_fix() -> None:

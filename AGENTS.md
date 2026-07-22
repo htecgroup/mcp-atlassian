@@ -9,8 +9,8 @@
 | Path | Purpose |
 | --- | --- |
 | `src/mcp_atlassian/` | Library source (Python ≥ 3.10) |
-| `  ├─ jira/` | Jira client + 21 mixins (issues, search, SLA, metrics, …) |
-| `  ├─ confluence/` | Confluence client + 8 mixins (pages, search, analytics, …) |
+| `  ├─ jira/` | Jira client + 23 mixins (issues, search, SLA, metrics, …) |
+| `  ├─ confluence/` | Confluence client + 11 mixins (pages, search, analytics, …) |
 | `  ├─ models/` | Pydantic v2 data models (`ApiModel` base) |
 | `  ├─ servers/` | FastMCP server instances (`jira_mcp`, `confluence_mcp`) |
 | `  ├─ preprocessing/` | Content conversion (ADF/Storage → Markdown) |
@@ -22,7 +22,7 @@
 
 ## Architecture
 
-- **Mixin composition**: `JiraFetcher` composes 21 mixins, `ConfluenceFetcher` composes 8. Client inheritance is transitive through mixins.
+- **Mixin composition**: `JiraFetcher` composes 23 mixins, `ConfluenceFetcher` composes 11. Client inheritance is transitive through mixins.
 - **FastMCP servers**: `servers/main.py` → lifespan → dependency injection via `get_jira_fetcher(ctx)` / `get_confluence_fetcher(ctx)`.
 - **Tool naming**: `{service}_{action}_{target}` (e.g., `jira_create_issue`, `confluence_get_page`).
 - **Config**: Environment-based `from_env()` factory on `JiraConfig` / `ConfluenceConfig` dataclasses.
@@ -74,8 +74,10 @@ uv run pytest --cov=src/mcp_atlassian --cov-report=term-missing  # coverage
 
 - **Cloud vs Server/DC**: API endpoints, field names, and auth methods differ. Always check `is_cloud` before assuming behavior.
 - **OAuth 2.0**: Supported on both Cloud and Server/Data Center. PAT is also available for Server/DC. Basic auth (user + API token) works on both Cloud and Server/DC.
+- **mTLS**: Client-certificate auth for Server/DC only (`JIRA_CLIENT_CERT`/`JIRA_CLIENT_KEY`, `CONFLUENCE_CLIENT_CERT`/`CONFLUENCE_CLIENT_KEY`). Config parsing lives in `jira/config.py` / `confluence/config.py`; SSL context setup in `utils/ssl.py`, env parsing in `utils/environment.py`. Encrypted key passwords aren't supported by `requests` — the key must be pre-decrypted.
 - **Read-only mode**: `READ_ONLY_MODE=true` blocks all write tools at server level.
-- **Type checking**: pre-commit runs **mypy** (strict mode).
+- **Type checking**: pre-commit runs **mypy**, but with many error codes disabled (`index`, `unreachable`, `assignment`, `arg-type`, `return-value`, …) — see `.pre-commit-config.yaml` for the current list. Being tightened incrementally; don't assume full strictness.
+- **Pytest markers**: `integration`, `dc_e2e`, `cloud_e2e`, `security_regression` (see `pyproject.toml`) — the latter three require real Atlassian instances/credentials and are skipped by default.
 - **Environment**: See `.env.example` for all configuration options (auth, proxy, SLA, filtering).
 
 ---

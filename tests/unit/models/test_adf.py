@@ -368,6 +368,49 @@ class TestMarkdownToAdf:
         assert heading["type"] == "heading"
         assert heading["attrs"]["level"] == level
 
+    def test_heading_strips_atx_closing_sequence(self):
+        """'## Title ##' drops the trailing closing hashes from the text."""
+        result = markdown_to_adf("## Summary ##")
+        heading = result["content"][0]
+        assert heading["type"] == "heading"
+        assert heading["content"][0]["text"] == "Summary"
+
+    def test_heading_hash_without_preceding_space_is_kept(self):
+        """A hash glued to a word (e.g. 'C#') is not mistaken for a closing sequence."""
+        result = markdown_to_adf("## What is C#")
+        heading = result["content"][0]
+        text = "".join(n["text"] for n in heading["content"])
+        assert text == "What is C#"
+
+    @pytest.mark.parametrize(
+        "md, level",
+        [
+            ("Summary\n===", 1),
+            ("Summary\n---", 2),
+        ],
+        ids=["setext_h1", "setext_h2"],
+    )
+    def test_setext_heading(self, md: str, level: int):
+        """Underline-style ('===' / '---') headings produce heading nodes."""
+        result = markdown_to_adf(md)
+        heading = result["content"][0]
+        assert heading["type"] == "heading"
+        assert heading["attrs"]["level"] == level
+        assert heading["content"][0]["text"] == "Summary"
+
+    def test_setext_underline_does_not_swallow_following_content(self):
+        """Setext heading detection still lets body text follow normally."""
+        result = markdown_to_adf("Summary\n---\nBody text.")
+        types = [n["type"] for n in result["content"]]
+        assert types == ["heading", "paragraph"]
+        assert result["content"][1]["content"][0]["text"] == "Body text."
+
+    def test_standalone_horizontal_rule_still_works(self):
+        """A '---' line after a blank line is still a thematic break, not a heading."""
+        result = markdown_to_adf("Paragraph one.\n\n---\n\nParagraph two.")
+        types = [n["type"] for n in result["content"]]
+        assert types == ["paragraph", "rule", "paragraph"]
+
     # -- Inline formatting --------------------------------------------------
 
     def test_bold(self):
@@ -648,6 +691,50 @@ class TestMarkdownToAdf:
         result = markdown_to_adf(md)
         assert any(n["type"] == "bulletList" for n in result["content"])
         assert not any(n["type"] == "taskList" for n in result["content"])
+
+    def test_nested_bullet_list(self):
+        """Indented - items nest as a bulletList inside the parent listItem."""
+        md = "- top\n  - nested"
+        result = markdown_to_adf(md)
+        bl = next(n for n in result["content"] if n["type"] == "bulletList")
+        assert len(bl["content"]) == 1
+        top_item = bl["content"][0]
+        assert top_item["content"][0]["type"] == "paragraph"
+        nested = next(n for n in top_item["content"] if n["type"] == "bulletList")
+        assert len(nested["content"]) == 1
+        assert nested["content"][0]["type"] == "listItem"
+
+    def test_deeply_nested_bullet_list(self):
+        """Three levels of indentation nest three levels deep."""
+        md = "- one\n  - two\n    - three"
+        result = markdown_to_adf(md)
+        level1 = next(n for n in result["content"] if n["type"] == "bulletList")
+        level2 = next(
+            n for n in level1["content"][0]["content"] if n["type"] == "bulletList"
+        )
+        level3 = next(
+            n for n in level2["content"][0]["content"] if n["type"] == "bulletList"
+        )
+        assert level3["content"][0]["content"][0]["content"][0]["text"] == "three"
+
+    def test_nested_ordered_list(self):
+        """Indented numbered items nest as an orderedList."""
+        md = "1. first\n  1. nested first"
+        result = markdown_to_adf(md)
+        ol = next(n for n in result["content"] if n["type"] == "orderedList")
+        top_item = ol["content"][0]
+        nested = next(n for n in top_item["content"] if n["type"] == "orderedList")
+        assert (
+            nested["content"][0]["content"][0]["content"][0]["text"] == "nested first"
+        )
+
+    def test_sibling_items_stay_flat_after_nesting(self):
+        """A nested item followed by a same-level sibling returns to the parent list."""
+        md = "- top\n  - nested\n- top2"
+        result = markdown_to_adf(md)
+        bl = next(n for n in result["content"] if n["type"] == "bulletList")
+        assert len(bl["content"]) == 2
+        assert bl["content"][1]["content"][0]["content"][0]["text"] == "top2"
 
     # -- Blockquote ---------------------------------------------------------
 

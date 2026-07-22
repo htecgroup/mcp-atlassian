@@ -1078,12 +1078,18 @@ async def test_update_page_accepts_empty_content(client, mock_confluence_fetcher
 
 
 def test_page_content_file_parameters_preserve_positional_order():
-    """content_file should not shift existing positional parameters."""
-    create_params = list(inspect.signature(confluence_server.create_page.fn).parameters)
+    """content_file should not shift existing positional parameters.
+
+    fastmcp reorders the exposed signature so required (no-default) params come
+    first, followed by the auto-injected ``ctx``, then remaining optional params
+    in their original declaration order — the source order in confluence.py
+    itself is unchanged (``ctx`` is still declared first there).
+    """
+    create_params = list(inspect.signature(confluence_server.create_page).parameters)
     assert create_params == [
-        "ctx",
         "space_key",
         "title",
+        "ctx",
         "content",
         "parent_id",
         "content_format",
@@ -1096,11 +1102,11 @@ def test_page_content_file_parameters_preserve_positional_order():
         "subtype",
     ]
 
-    update_params = list(inspect.signature(confluence_server.update_page.fn).parameters)
+    update_params = list(inspect.signature(confluence_server.update_page).parameters)
     assert update_params == [
-        "ctx",
         "page_id",
         "title",
+        "ctx",
         "content",
         "is_minor_edit",
         "version_comment",

@@ -194,9 +194,59 @@ def _make_paragraph(text: str, jira_base_url: str = "") -> dict[str, Any]:
     return {"type": "paragraph", "content": content}
 
 
-def _make_list_item(text: str, jira_base_url: str = "") -> dict[str, Any]:
-    """Create an ADF listItem node wrapping a paragraph."""
-    return {"type": "listItem", "content": [_make_paragraph(text, jira_base_url)]}
+_BULLET_ITEM_RE = re.compile(r"^(\s*)[-*]\s+(.*)$")
+_ORDERED_ITEM_RE = re.compile(r"^(\s*)\d+\.\s+(.*)$")
+
+
+def _list_item_marker(line: str) -> tuple[int, str, str] | None:
+    """Return (indent, kind, text) for a bullet/ordered list-item line.
+
+    Returns None if the line is not a list item. ``kind`` is one of
+    ``"bullet"``/``"ordered"``; indent is the leading-whitespace width, used
+    to detect nested sub-lists (deeper indent than the enclosing item).
+    """
+    match = _BULLET_ITEM_RE.match(line)
+    if match:
+        return len(match.group(1)), "bullet", match.group(2)
+    match = _ORDERED_ITEM_RE.match(line)
+    if match:
+        return len(match.group(1)), "ordered", match.group(2)
+    return None
+
+
+def _parse_markdown_list(
+    lines: list[str], i: int, indent: int, kind: str, jira_base_url: str = ""
+) -> tuple[dict[str, Any], int]:
+    """Parse a (possibly nested) list starting at ``lines[i]``.
+
+    Sibling items are those at the same indent and of the same kind. A line
+    indented deeper than ``indent`` starts a nested list, recursively parsed
+    and appended to the preceding item's content.
+
+    Returns the ADF list node and the index of the first unconsumed line.
+    """
+    items: list[dict[str, Any]] = []
+    while i < len(lines):
+        marker = _list_item_marker(lines[i])
+        if marker is None or marker[0] < indent or marker[1] != kind:
+            break
+        if marker[0] > indent:
+            # A deeper item here (without an intervening sibling) would
+            # otherwise loop forever; bail out to the enclosing call.
+            break
+        item_text = marker[2]
+        i += 1
+        item_content: list[dict[str, Any]] = [_make_paragraph(item_text, jira_base_url)]
+        nested_marker = _list_item_marker(lines[i]) if i < len(lines) else None
+        if nested_marker and nested_marker[0] > indent:
+            nested_node, i = _parse_markdown_list(
+                lines, i, nested_marker[0], nested_marker[1], jira_base_url
+            )
+            item_content.append(nested_node)
+        items.append({"type": "listItem", "content": item_content})
+
+    node_type = "bulletList" if kind == "bullet" else "orderedList"
+    return {"type": node_type, "content": items}, i
 
 
 def _make_task_item(
@@ -282,8 +332,28 @@ def markdown_to_adf(markdown_text: str, jira_base_url: str = "") -> dict[str, An
             doc["content"].append(cb)
             continue
 
-        # --- Horizontal rule ---
+        # --- Setext-style heading (Title\n=== / Title\n---) ---
         stripped = line.strip()
+        if (
+            stripped
+            and i + 1 < len(lines)
+            and re.match(r"^(?:=+|-{2,})\s*$", lines[i + 1].strip())
+            and not re.match(r"^(#{1,6}\s|>\s|```|:::|\{expand)", line)
+            and not _list_item_marker(line)
+            and not re.match(r"^[-*]\s+\[[ xX]\]\s+", line)
+        ):
+            level = 1 if lines[i + 1].strip()[0] == "=" else 2
+            doc["content"].append(
+                {
+                    "type": "heading",
+                    "attrs": {"level": level},
+                    "content": _parse_inline_formatting(line, jira_base_url),
+                }
+            )
+            i += 2
+            continue
+
+        # --- Horizontal rule ---
         if stripped in ("---", "***", "___") or (
             len(stripped) >= 3
             and all(c == stripped[0] for c in stripped)
@@ -299,7 +369,8 @@ def markdown_to_adf(markdown_text: str, jira_base_url: str = "") -> dict[str, An
         heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading_match:
             level = len(heading_match.group(1))
-            text = heading_match.group(2)
+            # Strip an optional ATX closing sequence, e.g. "## Title ##"
+            text = re.sub(r"\s+#+\s*$", "", heading_match.group(2))
             heading_node: dict[str, Any] = {
                 "type": "heading",
                 "attrs": {"level": level},
@@ -369,24 +440,13 @@ def markdown_to_adf(markdown_text: str, jira_base_url: str = "") -> dict[str, An
                 doc["content"].append(panel_node)
                 continue
 
-        # --- Unordered list ---
-        if re.match(r"^[-*]\s+", line):
-            items: list[dict[str, Any]] = []
-            while i < len(lines) and re.match(r"^[-*]\s+", lines[i]):
-                item_text = re.sub(r"^[-*]\s+", "", lines[i])
-                items.append(_make_list_item(item_text, jira_base_url))
-                i += 1
-            doc["content"].append({"type": "bulletList", "content": items})
-            continue
-
-        # --- Ordered list ---
-        if re.match(r"^\d+\.\s+", line):
-            items_ol: list[dict[str, Any]] = []
-            while i < len(lines) and re.match(r"^\d+\.\s+", lines[i]):
-                item_text = re.sub(r"^\d+\.\s+", "", lines[i])
-                items_ol.append(_make_list_item(item_text, jira_base_url))
-                i += 1
-            doc["content"].append({"type": "orderedList", "content": items_ol})
+        # --- Unordered / ordered list (nested sub-lists supported) ---
+        list_marker = _list_item_marker(line)
+        if list_marker:
+            list_node, i = _parse_markdown_list(
+                lines, i, list_marker[0], list_marker[1], jira_base_url
+            )
+            doc["content"].append(list_node)
             continue
 
         # --- Table ---
